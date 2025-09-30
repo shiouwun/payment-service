@@ -115,70 +115,206 @@ go build -o payment-service cmd/server/main.go
 
 服務會在 `http://localhost:8080` 上運行。
 
-## 📝 API 文檔
+## 📝 API 文檔與測試
 
-### 健康檢查
+### 快速測試流程
 
-```bash
-GET /health
-```
+確保服務已經運行在 `http://localhost:8080`，然後依序執行以下指令：
 
-### 支付相關 API
-
-所有支付 API 都需要 API Key 驗證，請在請求標頭中加入：
-```
-X-API-Key: your-api-key
-```
-或
-```
-Authorization: Bearer your-api-key
-```
-
-#### 1. 創建支付
+#### 1. 健康檢查
 
 ```bash
-POST /api/v1/payments
-Content-Type: application/json
-X-API-Key: api_key_merchant_1
+curl http://localhost:8080/health
+```
 
+**預期回應**:
+```json
 {
-  "merchant_id": "550e8400-e29b-41d4-a716-446655440001",
-  "customer_id": "550e8400-e29b-41d4-a716-446655440101",
-  "amount": 10000,
-  "currency": "USD",
-  "method": "credit_card",
-  "description": "購買商品",
-  "reference": "ORDER_001"
+  "service": "payment-service",
+  "status": "ok"
 }
 ```
 
-#### 2. 查詢支付
+#### 2. 創建支付訂單
 
 ```bash
-GET /api/v1/payments/{payment_id}
-X-API-Key: api_key_merchant_1
+curl -X POST http://localhost:8080/api/v1/payments \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: api_key_merchant_1" \
+  -d '{
+    "merchant_id": "550e8400-e29b-41d4-a716-446655440001",
+    "customer_id": "550e8400-e29b-41d4-a716-446655440101",
+    "amount": 10000,
+    "currency": "USD",
+    "method": "credit_card",
+    "description": "測試訂單",
+    "reference": "ORDER_001"
+  }'
 ```
 
-#### 3. 處理支付
+**預期回應**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "f02367b6-1eda-42a3-8b3e-921037fb22eb",
+    "merchant_id": "550e8400-e29b-41d4-a716-446655440001",
+    "customer_id": "550e8400-e29b-41d4-a716-446655440101",
+    "amount": 10000,
+    "currency": "USD",
+    "method": "credit_card",
+    "status": "pending",
+    "description": "測試訂單",
+    "reference": "ORDER_001",
+    "created_at": "2025-09-30T22:52:54Z",
+    "updated_at": "2025-09-30T22:52:54Z"
+  },
+  "message": "Payment created successfully"
+}
+```
+
+💡 **記下回應中的 `id` 值，後續查詢需要使用**
+
+#### 3. 查詢支付狀態
+
+將 `{payment_id}` 替換為上一步回傳的 ID：
 
 ```bash
-POST /api/v1/payments/{payment_id}/process
-X-API-Key: api_key_merchant_1
+curl -X GET http://localhost:8080/api/v1/payments/{payment_id} \
+  -H "X-API-Key: api_key_merchant_1"
 ```
 
-#### 4. 取消支付
+**預期回應**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "f02367b6-1eda-42a3-8b3e-921037fb22eb",
+    "status": "pending",
+    ...
+  }
+}
+```
+
+#### 4. 處理支付（模擬支付成功）
 
 ```bash
-POST /api/v1/payments/{payment_id}/cancel
-X-API-Key: api_key_merchant_1
+curl -X POST http://localhost:8080/api/v1/payments/{payment_id}/process \
+  -H "X-API-Key: api_key_merchant_1"
 ```
 
-#### 5. 查詢商戶支付記錄
+**預期回應**:
+```json
+{
+  "success": true,
+  "message": "Payment processed successfully"
+}
+```
+
+#### 5. 確認支付狀態已更新
+
+再次查詢訂單，確認狀態已變更為 `completed`：
 
 ```bash
-GET /api/v1/merchants/{merchant_id}/payments?limit=20&offset=0
+curl -X GET http://localhost:8080/api/v1/payments/{payment_id} \
+  -H "X-API-Key: api_key_merchant_1"
+```
+
+**預期回應** (注意 `status` 已變更):
+```json
+{
+  "success": true,
+  "data": {
+    "id": "f02367b6-1eda-42a3-8b3e-921037fb22eb",
+    "status": "completed",
+    "updated_at": "2025-09-30T14:53:14.721701Z",
+    "completed_at": "2025-09-30T14:53:14.721182Z",
+    ...
+  }
+}
+```
+
+#### 6. 查詢商戶所有支付記錄
+
+```bash
+curl -X GET "http://localhost:8080/api/v1/merchants/550e8400-e29b-41d4-a716-446655440001/payments?limit=10&offset=0" \
+  -H "X-API-Key: api_key_merchant_1"
+```
+
+#### 7. 取消支付（測試新訂單）
+
+先建立一個新訂單，然後取消它：
+
+```bash
+# 建立新訂單
+curl -X POST http://localhost:8080/api/v1/payments \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: api_key_merchant_1" \
+  -d '{
+    "merchant_id": "550e8400-e29b-41d4-a716-446655440001",
+    "customer_id": "550e8400-e29b-41d4-a716-446655440101",
+    "amount": 5000,
+    "currency": "USD",
+    "method": "credit_card",
+    "description": "待取消訂單",
+    "reference": "ORDER_002"
+  }'
+
+# 取消訂單（使用回傳的 payment_id）
+curl -X POST http://localhost:8080/api/v1/payments/{new_payment_id}/cancel \
+  -H "X-API-Key: api_key_merchant_1"
+```
+
+### API 端點總覽
+
+| 方法 | 端點 | 說明 |
+|------|------|------|
+| GET | `/health` | 健康檢查 |
+| POST | `/api/v1/payments` | 創建支付訂單 |
+| GET | `/api/v1/payments/{id}` | 查詢支付詳情 |
+| POST | `/api/v1/payments/{id}/process` | 處理支付 |
+| POST | `/api/v1/payments/{id}/cancel` | 取消支付 |
+| GET | `/api/v1/merchants/{id}/payments` | 查詢商戶支付記錄 |
+
+### 認證說明
+
+所有支付 API 都需要 API Key 驗證，請在請求標頭中加入：
+```
 X-API-Key: api_key_merchant_1
 ```
+或
+```
+Authorization: Bearer api_key_merchant_1
+```
+
+### 測試資料
+
+預設的測試用 UUID（資料庫初始化時會建立）：
+- **Merchant ID**: `550e8400-e29b-41d4-a716-446655440001`
+- **Customer ID**: `550e8400-e29b-41d4-a716-446655440101`
+- **API Key**: `api_key_merchant_1`
+
+### 支付方法 (Payment Methods)
+
+- `credit_card` - 信用卡
+- `bank_transfer` - 銀行轉帳
+- `digital_wallet` - 數位錢包
+
+### 貨幣代碼 (Currency)
+
+支援 ISO 4217 標準貨幣代碼：
+- `USD` - 美元
+- `EUR` - 歐元
+- `TWD` - 新台幣
+- `JPY` - 日圓
+
+### 金額格式
+
+⚠️ **重要**: 金額使用整數表示，以「分」為單位（避免浮點數精度問題）
+
+- `10000` = $100.00
+- `5000` = $50.00
+- `150` = $1.50
 
 ## 🔧 配置管理
 

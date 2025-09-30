@@ -60,10 +60,10 @@ func main() {
 	// 初始化 repositories
 	paymentRepo := database.NewPaymentRepository(db)
 	merchantRepo := database.NewMerchantRepository(db)
-	// customerRepo := database.NewCustomerRepository(db) // 需要實現
+	customerRepo := database.NewCustomerRepository(db)
 
 	// 初始化 use cases
-	paymentUseCase := usecase.NewPaymentUseCase(paymentRepo, merchantRepo, nil) // 暫時傳入 nil
+	paymentUseCase := usecase.NewPaymentUseCase(paymentRepo, merchantRepo, customerRepo)
 
 	// 設置路由
 	router := httpdelivery.SetupRouter(paymentUseCase, merchantRepo)

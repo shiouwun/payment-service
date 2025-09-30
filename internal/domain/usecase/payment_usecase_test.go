@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/company/payment-service/internal/domain/entity"
 	"github.com/google/uuid"
